@@ -1,0 +1,46 @@
+{
+    "asset": {
+        "format": "jpg",
+        "id": "2491ae4f72a3bdc8e859c0e00273ae46",
+        "name": "00000.jpg",
+        "path": "file:D:/Data%20Label%20Instructions/testNhard_resize_rename_7272/00000.jpg",
+        "size": {
+            "width": 1024,
+            "height": 1024
+        },
+        "state": 2,
+        "type": 1
+    },
+    "regions": [
+        {
+            "id": "VGnsCUnjv",
+            "type": "RECTANGLE",
+            "tags": [],
+            "boundingBox": {
+                "height": 725.1402714932127,
+                "width": 772.633484162896,
+                "left": 110.62443438914028,
+                "top": 103.09502262443439
+            },
+            "points": [
+                {
+                    "x": 100.19909502262445,
+                    "y": 99.61990950226246
+                },
+                {
+                    "x": 872.8325791855204,
+                    "y": 99.61990950226246
+                },
+                {
+                    "x": 872.8325791855204,
+                    "y": 824.7601809954751
+                },
+                {
+                    "x": 100.19909502262445,
+                    "y": 824.7601809954751
+                }
+            ]
+        }
+    ],
+    "timestamp": null
+}

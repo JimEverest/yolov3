@@ -1,0 +1,93 @@
+{
+    "name": "111",
+    "securityToken": "111 Token",
+    "sourceConnection": {
+        "name": "111",
+        "providerType": "localFileSystemProxy",
+        "providerOptions": {
+            "encrypted": "eyJjaXBoZXJ0ZXh0IjoiMDdkMjRmMDc0OTg1NjEwZmZhMjY1YTA3NWEzM2ZhNWU0ODRlNzNhMTVhODFkZDI4NWY5ZWFhNjAxMGFlNTk3YzNiZmIzNmNhOTc3MjAzN2YwYzEzNTYwMmNmNmUyYWNlZTY0YzRlZDNmYzc2OTYzMzNjOGQ3OGM2ZTg4ZDc1NjZjODI0YzFhOWE1MTY2ZWU0ZGFhOTlhNjMyZmQ1YzcxMyIsIml2IjoiYTk5OWU4YzQ4ZmZkYzY3NDUxMDAzN2Y5OWE0NGZkYmI0YTk4NzNjYWNiZDE5ZmYzIn0="
+        },
+        "id": "oebfvcZI4"
+    },
+    "targetConnection": {
+        "name": "111",
+        "providerType": "localFileSystemProxy",
+        "providerOptions": {
+            "encrypted": "eyJjaXBoZXJ0ZXh0IjoiZGE3MDNiNjlhYzA4ZmUxMjBkYjllZWI0ZjhlMzUyNGIwZWZhZGQ5NWI1ZjIwODAzZWUyYWI3MmI1YTkzYjY2Nzk2MWYzYzM0MmQ5NTAxMjgxN2U3NGJmNzU2Yzg2NWVlMDM2Yzk1Zjk0OWY1ODUzZTNiYjhjMDRiMWMyNGY4YTViOWFjM2I4ZTViZWVhNjBhZGI0NjkwMDhmYjE0YTU0MyIsIml2IjoiYWE4OTIwOGI5MGI3NjhhNGQ0OTYxZjVkNWI1MTk5NWM1MTA1ODhlNzRiZTQzOTJjIn0="
+        },
+        "id": "oebfvcZI4"
+    },
+    "videoSettings": {
+        "frameExtractionRate": 15
+    },
+    "tags": [
+        {
+            "name": "chest",
+            "color": "#000080"
+        }
+    ],
+    "id": "WeIzyinab",
+    "activeLearningSettings": {
+        "autoDetect": false,
+        "predictTag": true,
+        "modelPathType": "coco"
+    },
+    "exportFormat": {
+        "providerType": "vottJson",
+        "providerOptions": {
+            "encrypted": "eyJjaXBoZXJ0ZXh0IjoiZDk3MTdmNjFiODA3YmIwM2IxMTc0N2YyMDYyZjIyNjUxZGEzY2YyOWY3Y2VkNzM0YzIyMGRjODA4NjZlZjJmMThkYTczMDBjZTdkNTdiZGQ1MzBmZjBiYWIyMGZiYWUwIiwiaXYiOiJjYjc1Njk4ZmJmMzgzMjJmOTA5MDA3NGYzZjZkMmI5ODM5YmQ0MDRiM2E3MDI4MTkifQ=="
+        }
+    },
+    "version": "2.1.0",
+    "lastVisitedAssetId": "2385dbf128f36d10172f01a584f588b1",
+    "assets": {
+        "660e410f8e2c4ab30be067285697e941": {
+            "format": "jpg",
+            "id": "660e410f8e2c4ab30be067285697e941",
+            "name": "00000.jpg",
+            "path": "file:D:/Data%20Label%20Instructions/testNhard_resize_rename_7272/00000.jpg",
+            "size": {
+                "width": 1024,
+                "height": 1024
+            },
+            "state": 1,
+            "type": 1
+        },
+        "51b22f16c2fe1f847f82ba4190655254": {
+            "format": "jpg",
+            "id": "51b22f16c2fe1f847f82ba4190655254",
+            "name": "00001.jpg",
+            "path": "file:D:/Data%20Label%20Instructions/testNhard_resize_rename_7272/00001.jpg",
+            "size": {
+                "width": 1024,
+                "height": 1024
+            },
+            "state": 1,
+            "type": 1
+        },
+        "2d4644d9eb097ea0cfcf5d984a6c6516": {
+            "format": "jpg",
+            "id": "2d4644d9eb097ea0cfcf5d984a6c6516",
+            "name": "00002.jpg",
+            "path": "file:D:/Data%20Label%20Instructions/testNhard_resize_rename_7272/00002.jpg",
+            "size": {
+                "width": 1024,
+                "height": 1024
+            },
+            "state": 1,
+            "type": 1
+        },
+        "2385dbf128f36d10172f01a584f588b1": {
+            "format": "jpg",
+            "id": "2385dbf128f36d10172f01a584f588b1",
+            "name": "00004.jpg",
+            "path": "file:D:/Data%20Label%20Instructions/testNhard_resize_rename_7272/00004.jpg",
+            "size": {
+                "width": 1024,
+                "height": 1024
+            },
+            "state": 2,
+            "type": 1
+        }
+    }
+}
