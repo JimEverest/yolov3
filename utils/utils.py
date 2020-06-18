@@ -331,9 +331,12 @@ def box_iou(box1, box2):
 
 def wh_iou(wh1, wh2):
     # Returns the nxm IoU matrix. wh1 is nx2, wh2 is mx2
-    wh1 = wh1[:, None]  # [N,1,2]
-    wh2 = wh2[None]  # [1,M,2]
-    inter = torch.min(wh1, wh2).prod(2)  # [N,M]
+    wh1 = wh1[:, None]  # [N,2] ---> [N,1,2]
+    wh2 = wh2[None]     # [M,2] ---> [1,M,2] 
+
+    # 1. 分别广播到[N,M,2],逐个元素比较min。   
+    #.prod(2) 相乘第2维上的所有数据， reduce掉此维度
+    inter = torch.min(wh1, wh2).prod(2)  
     return inter / (wh1.prod(2) + wh2.prod(2) - inter)  # iou = inter / (area1 + area2 - inter)
 
 
@@ -393,6 +396,14 @@ def compute_loss(p, targets, model):  # predictions, targets, model
 
     # Compute losses
     np, ng = 0, 0  # number grid points, targets
+
+    # np------> grid points,   2028 -->
+    # ng------->labels(+nb),    19 --->
+    # nb------->labels(targets) 19 ---> 
+
+    #p[0]: [4, 3, 13, 13, 6] 
+    #p[1]: [4, 3, 26, 26, 6]
+    #p[2]: [4, 3, 52, 52, 6]
     for i, pi in enumerate(p):  # layer index, layer predictions
         b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
         tobj = torch.zeros_like(pi[..., 0])  # target obj
@@ -402,7 +413,8 @@ def compute_loss(p, targets, model):  # predictions, targets, model
         nb = len(b)
         if nb:  # number of targets
             ng += nb
-            ps = pi[b, a, gj, gi]  # prediction subset corresponding to targets
+            #GET PREDICT VALUES BY Target Indexs
+            ps = pi[b, a, gj, gi]  # prediction subset corresponding to targets 
             # ps[:, 2:4] = torch.sigmoid(ps[:, 2:4])  # wh power loss (uncomment)
 
             # GIoU
@@ -448,38 +460,67 @@ def build_targets(model, targets):
     reject, use_all_anchors = True, True
     for i in model.yolo_layers:
         # get number of grid points and anchor vec for this yolo layer
+        # 获取对应yolo层的grid尺寸和anchor大小
+
         if multi_gpu:
             ng, anchor_vec = model.module.module_list[i].ng, model.module.module_list[i].anchor_vec
         else:
-            ng, anchor_vec = model.module_list[i].ng, model.module_list[i].anchor_vec
+            ng, anchor_vec = model.module_list[i].ng, model.module_list[i].anchor_vec 
+            # anchor_vec -----> 占据多少grids
+            #【13,13】 ， 【[3.62500, 2.81250], [4.87500, 6.18750], [11.65625, 10.18750]】   step:32    [116,90,  156,198,  373,326] /32
+            #【26,26】 ， 【[1.87500, 3.81250], [3.87500, 2.81250], [3.68750, 7.43750]】     step:16    [30,61,    62,45,    59,119] /16
+            #【52,52】 ， 【[1.25000, 1.62500],[2.00000, 3.75000],[4.12500, 2.87500]】       step:8     [10,13,    16,30,    33,23]  /8
+            #  
+            # anchors =   10,13,  16,30,  33,23,  30,61,  62,45,  59,119,  116,90,  156,198,  373,326
+
+
 
         # iou of targets-anchors
         t, a = targets, []
-        gwh = t[:, 4:6] * ng
+
+        # target's [w,h] * 13     ------>  调整为与 anchor_vec 同样的意义。
+        # t[:, 4:6] : 原来为对于整张图的normalized(/416)，占据整张图比例  
+        # --->  乘回13， 现在数字表示占据多少grids。
+        gwh = t[:, 4:6] * ng  #Ground-Truth WH
         if nt:
             iou = wh_iou(anchor_vec, gwh)  # iou(3,n) = wh_iou(anchor_vec(3,2), gwh(n,2))
-
+                                           # 代表 3个anchor与每个ground truth的iou
+                                           # wh_iou 只考虑wh， 不计算xy偏差
             if use_all_anchors:
                 na = anchor_vec.shape[0]  # number of anchors
-                a = torch.arange(na).view((-1, 1)).repeat([1, nt]).view(-1)
-                t = targets.repeat([na, 1])
-                gwh = gwh.repeat([na, 1])
+
+                #a : 每个target所对应的anchor_id (0, 1, 2)
+                #Repeat 8 times.  #nt(8): targets count --->>【0 0 0 0 0 0 1 1 1 1 1 1 2 2 2 2 2 2】
+                a = torch.arange(na).view((-1, 1)).repeat([1, nt]).view(-1)  
+
+                #t : 每个target[:6] 重复3遍， 对应3个不同ratio的Anchor
+                t = targets.repeat([na, 1])   # [8,6] ---> [24,6]     # Repeat 3 times   
+
+                #gwh : 每个target-grid_wh[:2] 重复3遍， 对应3个不同ratio的Anchor
+                gwh = gwh.repeat([na, 1])     # [8,2] ---> [24,2]     # Repeat 3 times
             else:  # use best anchor only
                 iou, a = iou.max(0)  # best iou and anchor
 
             # reject anchors below iou_thres (OPTIONAL, increases P, lowers R)
             if reject:
                 j = iou.view(-1) > model.hyp['iou_t']  # iou threshold hyperparameter
-                t, a, gwh = t[j], a[j], gwh[j]
+                t, a, gwh = t[j], a[j], gwh[j]  #24--->19
 
         # Indices
-        b, c = t[:, :2].long().t()  # target image, class
+        b, c = t[:, :2].long().t()  # target_image_id, class   long--->长整形  t() ---> 转置
         gxy = t[:, 2:4] * ng  # grid x, y
-        gi, gj = gxy.long().t()  # grid x, y indices
+        gi, gj = gxy.long().t()  # grid x, y indices # 注意这里通过long将其转化为整形，代表格子的左上角
         indices.append((b, a, gj, gi))
+        # indice结构体保存内容为：
+        '''
+        b: 一个batch中的角标
+        a: 代表所选中的正样本的anchor的下角标
+        gj, gi: 代表target所属grid的左上角坐标（编号）
+        '''
+
 
         # Box
-        gxy -= gxy.floor()  # xy
+        gxy -= gxy.floor()  # xy   
         tbox.append(torch.cat((gxy, gwh), 1))  # xywh (grids)
         av.append(anchor_vec[a])  # anchor vec
 
@@ -489,7 +530,10 @@ def build_targets(model, targets):
             assert c.max() < model.nc, 'Model accepts %g classes labeled from 0-%g, however you labelled a class %g. ' \
                                        'See https://github.com/ultralytics/yolov3/wiki/Train-Custom-Data' % (
                                            model.nc, model.nc - 1, c.max())
-
+    # tcls[0,1,2,3]    : [0]: ([19]) ---- ([0,0,0,......])
+    # tbox[0,1,2,3]    : [0]: ([19,4]) -- ([gx,gy,gw,gh],[gx,gy,gw,gh]......)  
+    # indices[0,1,2,3] : [0]: ([])
+    # av[0,1,2,3] 
     return tcls, tbox, indices, av
 
 

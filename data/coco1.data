@@ -1,4 +1,4 @@
-classes=80
-train=data/coco1.txt
-valid=data/coco1.txt
-names=data/coco.names
+classes=1
+train=data/train.txt
+valid=data/test.txt
+names=data/xray.names

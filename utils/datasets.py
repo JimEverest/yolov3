@@ -16,6 +16,8 @@ from tqdm import tqdm
 
 from utils.utils import xyxy2xywh, xywh2xyxy
 
+from utils.debug import save_image,save_target_imgs,save_mosaic_img,unloader,load_img_labels
+
 help_url = 'https://github.com/ultralytics/yolov3/wiki/Train-Custom-Data'
 img_formats = ['.bmp', '.jpg', '.jpeg', '.png', '.tif', '.dng']
 vid_formats = ['.mov', '.avi', '.mp4']
@@ -331,7 +333,7 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
                 except:
                     nm += 1  # print('missing labels for image %s' % self.img_files[i])  # file missing
                     continue
-
+                #<debug: load_img_labels(file,l[0][1:],"xxx")>
                 if l.shape[0]:
                     assert l.shape[1] == 5, '> 5 label columns: %s' % file
                     assert (l >= 0).all(), 'negative labels: %s' % file
@@ -486,7 +488,9 @@ class LoadImagesAndLabels(Dataset):  # for training/testing
 
         # Convert
         img = img[:, :, ::-1].transpose(2, 0, 1)  # BGR to RGB, to 3x416x416
-        img = np.ascontiguousarray(img)
+        img = np.ascontiguousarray(img) # https://zhuanlan.zhihu.com/p/59767914
+        # 可以这样认为，ascontiguousarray函数将一个内存不连续存储的数组转换为内存连续存储的数组，使得运行速度更快。
+
 
         return torch.from_numpy(img), labels_out, self.img_files[index], shapes
 
@@ -531,13 +535,13 @@ def load_mosaic(self, index):
     img4 = np.full((s * 2, s * 2, 3), 114, dtype=np.uint8)  # base image with 4 tiles
     indices = [index] + [random.randint(0, len(self.labels) - 1) for _ in range(3)]  # 3 additional image indices
     for i, index in enumerate(indices):
-        # Load image
+        # Load image & resized h,w
         img, _, (h, w) = load_image(self, index)
 
         # place img in img4
         if i == 0:  # top left
-            x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc  # xmin, ymin, xmax, ymax (large image)
-            x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h  # xmin, ymin, xmax, ymax (small image)
+            x1a, y1a, x2a, y2a = max(xc - w, 0), max(yc - h, 0), xc, yc  # xmin, ymin, xmax, ymax (large image)  4-mosaic image
+            x1b, y1b, x2b, y2b = w - (x2a - x1a), h - (y2a - y1a), w, h  # xmin, ymin, xmax, ymax (small image)   416-raw image
         elif i == 1:  # top right
             x1a, y1a, x2a, y2a = xc, max(yc - h, 0), min(xc + w, s * 2), yc
             x1b, y1b, x2b, y2b = 0, h - (y2a - y1a), min(w, x2a - x1a), h
@@ -563,20 +567,20 @@ def load_mosaic(self, index):
             if x.size > 0:
                 # Normalized xywh to pixel xyxy format
                 labels = x.copy()
-                labels[:, 1] = w * (x[:, 1] - x[:, 3] / 2) + padw
-                labels[:, 2] = h * (x[:, 2] - x[:, 4] / 2) + padh
-                labels[:, 3] = w * (x[:, 1] + x[:, 3] / 2) + padw
-                labels[:, 4] = h * (x[:, 2] + x[:, 4] / 2) + padh
+                labels[:, 1] = w * (x[:, 1] - x[:, 3] / 2) + padw # X_min = (x - w/2) + pad_w
+                labels[:, 2] = h * (x[:, 2] - x[:, 4] / 2) + padh # Y_min = (y - w/2) + pad_h
+                labels[:, 3] = w * (x[:, 1] + x[:, 3] / 2) + padw # X_max = (x + w/2) + pad_w
+                labels[:, 4] = h * (x[:, 2] + x[:, 4] / 2) + padh # Y_max = (y + w/2) + pad_h
             else:
                 labels = np.zeros((0, 5), dtype=np.float32)
             labels4.append(labels)
-
+    # <debug: save_mosaic_img(img4,labels4,"saic_xxx")>
     # Concat/clip labels
     if len(labels4):
         labels4 = np.concatenate(labels4, 0)
         # np.clip(labels4[:, 1:] - s / 2, 0, s, out=labels4[:, 1:])  # use with center crop
         np.clip(labels4[:, 1:], 0, 2 * s, out=labels4[:, 1:])  # use with random_affine
-
+    # save_mosaic_img(img4,labels4,"saic_xxx")
     # Augment
     # img4 = img4[s // 2: int(s * 1.5), s // 2:int(s * 1.5)]  # center crop (WARNING, requires box pruning)
     img4, labels4 = random_affine(img4, labels4,
@@ -653,19 +657,19 @@ def random_affine(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10,
     M = S @ T @ R  # ORDER IS IMPORTANT HERE!!
     changed = (border != 0) or (M != np.eye(3)).any()
     if changed:
-        img = cv2.warpAffine(img, M[:2], dsize=(width, height), flags=cv2.INTER_AREA, borderValue=(114, 114, 114))
+        img = cv2.warpAffine(img, M[:2], dsize=(width, height), flags=cv2.INTER_AREA, borderValue=(114, 114, 114)) #borderValue边界填充像素值(gray?);
 
     # Transform label coordinates
     n = len(targets)
     if n:
         # warp points
-        xy = np.ones((n * 4, 3))
-        xy[:, :2] = targets[:, [1, 2, 3, 4, 1, 4, 3, 2]].reshape(n * 4, 2)  # x1y1, x2y2, x1y2, x2y1
+        xy = np.ones((n * 4, 3))                                            #             4--->8
+        xy[:, :2] = targets[:, [1, 2, 3, 4, 1, 4, 3, 2]].reshape(n * 4, 2)  # x1,y1,x2,y2 ----->  x1y1, x2y2, x1y2, x2y1 / 
         xy = (xy @ M.T)[:, :2].reshape(n, 8)
 
         # create new boxes
-        x = xy[:, [0, 2, 4, 6]]
-        y = xy[:, [1, 3, 5, 7]]
+        x = xy[:, [0, 2, 4, 6]] # [x1, x2, x1, x2] *n
+        y = xy[:, [1, 3, 5, 7]] # [y1, y2, y2, y1] *n
         xy = np.concatenate((x.min(1), y.min(1), x.max(1), y.max(1))).reshape(4, n).T
 
         # # apply angle-based reduction of bounding boxes
@@ -685,7 +689,7 @@ def random_affine(img, targets=(), degrees=10, translate=.1, scale=.1, shear=10,
         area = w * h
         area0 = (targets[:, 3] - targets[:, 1]) * (targets[:, 4] - targets[:, 2])
         ar = np.maximum(w / (h + 1e-16), h / (w + 1e-16))  # aspect ratio
-        i = (w > 4) & (h > 4) & (area / (area0 + 1e-16) > 0.2) & (ar < 10)
+        i = (w > 4) & (h > 4) & (area / (area0 + 1e-16) > 0.2) & (ar < 10) # i--->bool masks,   Condition here! 
 
         targets = targets[i]
         targets[:, 1:5] = xy[i]

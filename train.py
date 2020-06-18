@@ -1,5 +1,9 @@
 import argparse
 
+import multiprocessing
+multiprocessing.set_start_method('spawn', True)
+
+
 import torch.distributed as dist
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
@@ -53,6 +57,60 @@ if hyp['fl_gamma']:
     print('Using FocalLoss(gamma=%g)' % hyp['fl_gamma'])
 
 
+
+from utils.debug import save_image,save_target_imgs
+
+# ############################################################################################################## 
+# #██████╗░███████╗██████╗░██╗░░░██╗░██████╗░
+# #██╔══██╗██╔════╝██╔══██╗██║░░░██║██╔════╝░
+# #██║░░██║█████╗░░██████╦╝██║░░░██║██║░░██╗░
+# #██║░░██║██╔══╝░░██╔══██╗██║░░░██║██║░░╚██╗
+# #██████╔╝███████╗██████╦╝╚██████╔╝╚██████╔╝
+# #╚═════╝░╚══════╝╚═════╝░░╚═════╝░░╚═════╝░
+
+# import torchvision.transforms as transforms
+# from PIL import Image, ImageDraw, ImageFont
+# # loader使用torchvision中自带的transforms函数
+# loader = transforms.Compose([transforms.ToTensor()])  
+# unloader = transforms.ToPILImage()
+
+
+# def save_image(tensor, id):
+#     dir = 'debug'
+#     image = tensor.cpu().clone()  # we clone the tensor to not do changes on it
+#     #image = image.squeeze(0)  # remove the fake batch dimension
+#     image = unloader(image)
+#     if not os.path.exists(dir):
+#         os.makedirs(dir)
+#     image.save('debug/s{}.jpg'.format(id))
+
+# def save_target_imgs(imgs,targets,id):
+#     dir = 'debug'
+#     imgs = imgs.cpu().clone()  
+#     print("Img count: ", str(imgs.shape[0]))
+#     for i,img in enumerate(imgs):
+#         print("------------------------- ",str(i)," ------------------------")
+#         select_tarIds = torch.where(targets[...,0]==3)
+#         select_tars = targets[select_tarIds]
+#         image = unloader(img)
+#         draw = ImageDraw.Draw(image)
+#         for tar in select_tars:
+#             x1,y1 = (tar[2:4]*416).cpu().numpy()
+#             print("x1,y1--->",(x1,y1))
+#             x2,y2 = (tar[2:4]*416 + tar[4:]*416).cpu().numpy()
+#             print("x2,y2--->",(x2,y2))
+
+#             draw.rectangle(((x1,y1), (x2,y2)), outline="#ff8888")
+#         # image.show()
+#         if not os.path.exists(dir):
+#             os.makedirs(dir)
+#         image.save('debug/s_{}_{}.jpg'.format(i,id))
+#         print("--------------------------------------------------")
+
+
+    
+
+##############################################################################################################3
 def train():
     cfg = opt.cfg
     data = opt.data
@@ -175,11 +233,13 @@ def train():
                                   hyp=hyp,  # augmentation hyperparameters
                                   rect=opt.rect,  # rectangular training
                                   cache_images=opt.cache_images,
-                                  single_cls=opt.single_cls)
+                                  single_cls=opt.single_cls)#,cache_labels=False) # todo: disable cache_labels for debug
 
     # Dataloader
     batch_size = min(batch_size, len(dataset))
-    nw = min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])  # number of workers
+    nw = 1 #min([os.cpu_count(), batch_size if batch_size > 1 else 0, 8])  #TODO: Uncomment this number of workers
+
+    
     dataloader = torch.utils.data.DataLoader(dataset,
                                              batch_size=batch_size,
                                              num_workers=nw,
@@ -187,14 +247,16 @@ def train():
                                              pin_memory=True,
                                              collate_fn=dataset.collate_fn)
 
-    # Testloader
-    testloader = torch.utils.data.DataLoader(LoadImagesAndLabels(test_path, img_size_test, batch_size,
+    # Test-Dataset
+    test_dataset = LoadImagesAndLabels(test_path, img_size_test, batch_size,
                                                                  hyp=hyp,
                                                                  rect=True,
                                                                  cache_images=opt.cache_images,
-                                                                 single_cls=opt.single_cls),
-                                             batch_size=batch_size,
-                                             num_workers=nw,
+                                                                 single_cls=opt.single_cls,cache_labels=False)# todo: disable cache_labels for debug
+    # Testloader
+    testloader = torch.utils.data.DataLoader(test_dataset,
+                                             batch_size=batch_size,  #4
+                                             num_workers=nw,         #4
                                              pin_memory=True,
                                              collate_fn=dataset.collate_fn)
 
@@ -228,7 +290,7 @@ def train():
         mloss = torch.zeros(4).to(device)  # mean losses
         print(('\n' + '%10s' * 8) % ('Epoch', 'gpu_mem', 'GIoU', 'obj', 'cls', 'total', 'targets', 'img_size'))
         pbar = tqdm(enumerate(dataloader), total=nb)  # progress bar
-        for i, (imgs, targets, paths, _) in pbar:  # batch -------------------------------------------------------------
+        for i, (imgs, targets, paths, _) in pbar:  # get batch -------------------------------------------------------------
             ni = i + nb * epoch  # number integrated batches (since train start)
             imgs = imgs.to(device).float() / 255.0  # uint8 to float32, 0 - 255 to 0.0 - 1.0
             targets = targets.to(device)
@@ -238,7 +300,7 @@ def train():
                 model.gr = np.interp(ni, [0, n_burn * 2], [0.0, 1.0])  # giou loss ratio (obj_loss = 1.0 or giou)
                 if ni == n_burn:  # burnin complete
                     print_model_biases(model)
-
+                                                                                                                                                                                                                                                                                                                     
                 for j, x in enumerate(optimizer.param_groups):
                     # bias lr falls from 0.1 to lr0, all other lrs rise from 0.0 to lr0
                     x['lr'] = np.interp(ni, [0, n_burn], [0.1 if j == 2 else 0.0, x['initial_lr'] * lf(epoch)])
@@ -474,3 +536,8 @@ if __name__ == '__main__':
 
             # Plot results
             # plot_evolution_results(hyp)
+
+
+
+
+
