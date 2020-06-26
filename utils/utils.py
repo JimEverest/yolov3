@@ -378,6 +378,7 @@ def smooth_BCE(eps=0.1):  # https://github.com/ultralytics/yolov3/issues/238#iss
 def compute_loss(p, targets, model):  # predictions, targets, model
     ft = torch.cuda.FloatTensor if p[0].is_cuda else torch.Tensor
     lcls, lbox, lobj = ft([0]), ft([0]), ft([0])
+    lobj_19 = ft([0]) #debug added by jim 2020-06-26
     tcls, tbox, indices, anchor_vec = build_targets(model, targets)
     h = model.hyp  # hyperparameters
     red = 'mean'  # Loss reduction (sum or mean)
@@ -406,11 +407,13 @@ def compute_loss(p, targets, model):  # predictions, targets, model
     #p[2]: [4, 3, 52, 52, 6]
     for i, pi in enumerate(p):  # layer index, layer predictions
         b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
-        tobj = torch.zeros_like(pi[..., 0])  # target obj
-        np += tobj.numel()
+
+        #pi : [ x y w h obj_conf cls]
+        tobj = torch.zeros_like(pi[..., 0])  # target obj *这里只是借用0号的shape (4x3x13x13) , 但是0号并不是描述obj的，号其实是x 而是4号obj_conf
+        np += tobj.numel()     # All targets of current batch for 1 of anchor scale (13,26,52)...    ( bs x 3_ratio_anchors x grid_y x grid_x )  --->  ( 4 * 3 * 13 * 13 )
 
         # Compute losses
-        nb = len(b)
+        nb = len(b)   # number of targets
         if nb:  # number of targets
             ng += nb
             #GET PREDICT VALUES BY Target Indexs
@@ -425,7 +428,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
             lbox += (1.0 - giou).sum() if red == 'sum' else (1.0 - giou).mean()  # giou loss
             tobj[b, a, gj, gi] = (1.0 - model.gr) + model.gr * giou.detach().clamp(0).type(tobj.dtype)  # giou ratio
 
-            if model.nc > 1:  # cls loss (only if multiple classes)
+            if model.nc > 1:  # cls loss (only if multiple classes)   #nc:  number of classes  (1)
                 t = torch.full_like(ps[:, 5:], cn)  # targets
                 t[range(nb), tcls[i]] = cp
                 lcls += BCEcls(ps[:, 5:], t)  # BCE
@@ -436,7 +439,7 @@ def compute_loss(p, targets, model):  # predictions, targets, model
             #     [file.write('%11.5g ' * 4 % tuple(x) + '\n') for x in torch.cat((txy[i], twh[i]), 1)]
 
         lobj += BCEobj(pi[..., 4], tobj)  # obj loss
-
+        lobj_19_3_0 + = BCEobj(ps[..., 4], tobj[b, a, gj, gi]) # obj loss for 3 scale anchors (targeted boxes only...) Added by jim 2020-06-26
     lbox *= h['giou']
     lobj *= h['obj']
     lcls *= h['cls']
@@ -448,11 +451,13 @@ def compute_loss(p, targets, model):  # predictions, targets, model
             lbox *= 3 / ng
 
     loss = lbox + lobj + lcls
-    return loss, torch.cat((lbox, lobj, lcls, loss)).detach()
+    return loss, torch.cat((lbox, lobj, lcls, loss)).detach()  # loss--> 1,  cat--> 4
 
 
 def build_targets(model, targets):
-    # targets = [image, class, x, y, w, h]
+    # targets = [image, class, cx, cy, w, h]   from DataLoader
+    # 1.(x,y--> center) 
+    # 2. (xywh  ---> normalized by whole 416)   
 
     nt = targets.shape[0]
     tcls, tbox, indices, av = [], [], [], []
@@ -466,10 +471,15 @@ def build_targets(model, targets):
             ng, anchor_vec = model.module.module_list[i].ng, model.module.module_list[i].anchor_vec
         else:
             ng, anchor_vec = model.module_list[i].ng, model.module_list[i].anchor_vec 
-            # anchor_vec -----> 占据多少grids
-            #【13,13】 ， 【[3.62500, 2.81250], [4.87500, 6.18750], [11.65625, 10.18750]】   step:32    [116,90,  156,198,  373,326] /32
-            #【26,26】 ， 【[1.87500, 3.81250], [3.87500, 2.81250], [3.68750, 7.43750]】     step:16    [30,61,    62,45,    59,119] /16
-            #【52,52】 ， 【[1.25000, 1.62500],[2.00000, 3.75000],[4.12500, 2.87500]】       step:8     [10,13,    16,30,    33,23]  /8
+            #ng ---> number of grids: 
+            # 1. 13     Layer #82
+            # 2. 26     Layer #94
+            # 3. 52     Layer #106
+
+            # anchor_vec -----> 占据多少grids , 或者理解为相对于Grid（feature map）的normalize。
+            #1(#82) .【13x13】 ， 【[3.62500, 2.81250], [4.87500, 6.18750], [11.65625, 10.18750]】   step:32    [116,90,  156,198,  373,326] /32
+            #2(#94) .【26x26】 ， 【[1.87500, 3.81250], [3.87500, 2.81250], [3.68750, 7.43750]】     step:16    [30,61,    62,45,    59,119] /16
+            #3(#106).【52x52】 ， 【[1.25000, 1.62500],[2.00000, 3.75000],[4.12500, 2.87500]】       step:8     [10,13,    16,30,    33,23]  /8
             #  
             # anchors =   10,13,  16,30,  33,23,  30,61,  62,45,  59,119,  116,90,  156,198,  373,326
 
@@ -480,7 +490,7 @@ def build_targets(model, targets):
 
         # target's [w,h] * 13     ------>  调整为与 anchor_vec 同样的意义。
         # t[:, 4:6] : 原来为对于整张图的normalized(/416)，占据整张图比例  
-        # --->  乘回13， 现在数字表示占据多少grids。
+        # --->  乘回13， 现在数字表示占据多少grids (/32 )。 或者， 占据每个grid(32x32) 的多少倍。
         gwh = t[:, 4:6] * ng  #Ground-Truth WH
         if nt:
             iou = wh_iou(anchor_vec, gwh)  # iou(3,n) = wh_iou(anchor_vec(3,2), gwh(n,2))
@@ -507,8 +517,13 @@ def build_targets(model, targets):
                 t, a, gwh = t[j], a[j], gwh[j]  #24--->19
 
         # Indices
-        b, c = t[:, :2].long().t()  # target_image_id, class   long--->长整形  t() ---> 转置
+        b, c = t[:, :2].long().t()  # target_image_id, class_id   long--->长整形  t() ---> 转置
         gxy = t[:, 2:4] * ng  # grid x, y
+        # target's [x,y] * 13     ------>  调整为与 anchor_vec 同样的意义。
+        # t[:, 2:4] : 原来为对于整张图的normalized(/416)，整张图比例中的中心点坐标（0~1）。  
+        # --->  乘回13， 现在数字表示中心点落在第几个grid(/32 )。  （0~12）
+
+
         gi, gj = gxy.long().t()  # grid x, y indices # 注意这里通过long将其转化为整形，代表格子的左上角
         indices.append((b, a, gj, gi))
         # indice结构体保存内容为：
